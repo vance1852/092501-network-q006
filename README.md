@@ -42,3 +42,18 @@ PYTHONPATH=src python3 -m urban_network.api --database network.sqlite3 --host 12
 ```
 
 `GET /health` 返回服务状态，其余接口使用 JSON 和 `Authorization: Bearer <token>` 会话，支持管段登记、读数上报、风险查询、工单创建和应急资源分配。
+
+## 暴雨跨片区调度
+
+当多个积水、管涌工单同时触发时，可以先**预演**再**确认**调度方案，而不是直接把固定数量扣给单个工单：
+
+- `POST /dispatch/compatibility`：登记需求种类与可兼容资源种类（管理员）；
+- `POST /dispatch/reserves`：设置片区对某类资源的最低保有量（管理员）；
+- `POST /work-orders/{id}/road-access`：登记资源到工单的道路到达时间与是否可达；
+- `POST /work-orders/{id}/demand`：声明工单需要的资源种类和数量；
+- `POST /dispatch/plans`：预演，返回确定性方案（`assignments`）和未满足需求（`unmet`，含原因）；
+- `POST /dispatch/plans/{id}/adjust`：人工调整，必须填写理由；
+- `POST /dispatch/plans/{id}/confirm`：核对资源版本后一次性落库；
+- `GET /dispatch/plans`、`GET /dispatch/plans/{id}`：方案与最终分配重启后仍可查询。
+
+确定性规则：工单按风险分降序、优先级、到达时间排序；同工单内本片区资源优先，跨片区只能动用超出最低保有量的部分，资源种类必须兼容且道路可达。同一输入预演返回同一方案；确认时会在写事务内重新计算资源版本，版本变化返回 `409` 且不产生任何扣减；重复确认幂等返回原方案。方案含跨片区分配时需要市级调度员（`dispatcher`，内置账号 `dispatcher/city-dispatch`）或管理员确认，普通操作员确认会得到 `403`。
